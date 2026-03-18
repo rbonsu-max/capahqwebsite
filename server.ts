@@ -10,21 +10,37 @@ import bcrypt from 'bcryptjs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer as createViteServer } from 'vite';
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 app.set('trust proxy', 1);
-const PORT = 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const PORT = Number(process.env.PORT) || 3000;
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  console.error('FATAL ERROR: JWT_SECRET is not defined in environment variables.');
+  process.exit(1);
+}
+
+const DEFAULT_JWT_SECRET = 'your-secret-key-change-this-in-production';
+const finalJwtSecret = JWT_SECRET || DEFAULT_JWT_SECRET;
 
 // Database setup
-const dbDir = path.join(__dirname, 'data');
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'data', 'database.sqlite');
+const dbDir = path.dirname(dbPath);
+
 if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir);
+  fs.mkdirSync(dbDir, { recursive: true });
 }
-const db = new Database(path.join(dbDir, 'database.sqlite'));
+
+console.log(`Using database at: ${dbPath}`);
+const db = new Database(dbPath);
 
 // Create tables
 db.exec(`
@@ -189,6 +205,14 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Simple request logger
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'test') {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 1000 // limit each IP to 1000 requests per windowMs
@@ -198,7 +222,7 @@ app.use('/api', limiter);
 // Uploads setup
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir));
 
@@ -223,7 +247,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
   if (token == null) return res.sendStatus(401);
 
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+  jwt.verify(token, finalJwtSecret, (err: any, user: any) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();
@@ -236,7 +260,7 @@ app.post('/api/auth/login', (req, res) => {
   const user: any = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
   
   if (user && bcrypt.compareSync(password, user.password)) {
-    const token = jwt.sign({ email: user.email }, JWT_SECRET, { expiresIn: '24h' });
+    const token = jwt.sign({ email: user.email }, finalJwtSecret, { expiresIn: '24h' });
     res.json({ token, email: user.email });
   } else {
     res.status(401).json({ error: 'Invalid credentials' });
@@ -449,3 +473,4 @@ async function startServer() {
 }
 
 startServer();
+
