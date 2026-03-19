@@ -3,22 +3,28 @@ import { api } from '../lib/api';
 
 interface User {
   email: string;
+  role: string;
+  mustChangePassword: boolean;
 }
 
 interface AuthContextType {
   user: User | null;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUser: (data: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   isAdmin: false,
+  isSuperAdmin: false,
   loading: true,
   login: async () => {},
   logout: async () => {},
+  updateUser: () => {},
 });
 
 export function useAuth() {
@@ -28,6 +34,7 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,8 +47,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           if (res.ok) {
             const data = await res.json();
-            setUser({ email: data.email });
-            setIsAdmin(true); // All logged in users are admins in this simple setup
+            setUser({ 
+              email: data.email, 
+              role: data.role, 
+              mustChangePassword: data.mustChangePassword 
+            });
+            setIsAdmin(true);
+            setIsSuperAdmin(data.role === 'super_admin');
           } else {
             localStorage.removeItem('token');
           }
@@ -64,8 +76,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) throw new Error('Login failed');
       const data = await res.json();
       localStorage.setItem('token', data.token);
-      setUser({ email: data.email });
+      setUser({ 
+        email: data.email, 
+        role: data.role, 
+        mustChangePassword: data.mustChangePassword 
+      });
       setIsAdmin(true);
+      setIsSuperAdmin(data.role === 'super_admin');
     } catch (error) {
       console.error('Error signing in', error);
       throw error;
@@ -76,10 +93,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('token');
     setUser(null);
     setIsAdmin(false);
+    setIsSuperAdmin(false);
+  };
+
+  const updateUser = (data: Partial<User>) => {
+    if (user) {
+      setUser({ ...user, ...data });
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAdmin, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAdmin, isSuperAdmin, loading, login, logout, updateUser }}>
       {!loading && children}
     </AuthContext.Provider>
   );

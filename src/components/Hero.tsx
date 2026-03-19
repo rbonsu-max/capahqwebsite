@@ -79,6 +79,7 @@ export default function Hero() {
             alt={slides[currentSlide].title}
             className="w-full h-full object-cover opacity-30"
             referrerPolicy="no-referrer"
+            loading="lazy"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/60 to-transparent" />
         </motion.div>

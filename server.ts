@@ -11,9 +11,41 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
+import sharp from 'sharp';
 
 // Load environment variables
 dotenv.config();
+
+// Email transporter setup
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT) || 587,
+  secure: Number(process.env.SMTP_PORT) === 465,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
+
+const sendEmail = async (to: string, subject: string, html: string) => {
+  if (!process.env.SMTP_HOST) {
+    console.log('SMTP not configured. Email would have been sent to:', to);
+    console.log('Subject:', subject);
+    console.log('Content:', html);
+    return;
+  }
+  try {
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM || '"CAPA HQ" <noreply@capahq.org>',
+      to,
+      subject,
+      html,
+    });
+  } catch (error) {
+    console.error('Error sending email:', error);
+  }
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,6 +80,8 @@ db.exec(`
     id TEXT PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    role TEXT DEFAULT 'admin',
+    mustChangePassword INTEGER DEFAULT 0,
     createdAt INTEGER
   );
   CREATE TABLE IF NOT EXISTS news (
@@ -148,6 +182,16 @@ db.exec(`
     created_at TEXT,
     updated_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS programs (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    content TEXT,
+    link TEXT,
+    order_index INTEGER DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT
+  );
 `);
 
 // Migrations to add missing columns
@@ -172,7 +216,9 @@ const migrations = [
   'ALTER TABLE thematic_areas ADD COLUMN iconName TEXT',
   'ALTER TABLE thematic_areas ADD COLUMN "order" INTEGER',
   'ALTER TABLE thematic_areas ADD COLUMN updatedAt TEXT',
-  'ALTER TABLE thematic_areas ADD COLUMN createdAt INTEGER'
+  'ALTER TABLE thematic_areas ADD COLUMN createdAt INTEGER',
+  'ALTER TABLE admins ADD COLUMN role TEXT DEFAULT "admin"',
+  'ALTER TABLE admins ADD COLUMN mustChangePassword INTEGER DEFAULT 0'
 ];
 
 for (const migration of migrations) {
@@ -187,7 +233,7 @@ for (const migration of migrations) {
 const adminCheck = db.prepare('SELECT * FROM admins WHERE email = ?').get('youroger1@gmail.com');
 if (!adminCheck) {
   const hash = bcrypt.hashSync('admin123', 10);
-  db.prepare('INSERT INTO admins (id, email, password, createdAt) VALUES (?, ?, ?, ?)').run('default-admin', 'youroger1@gmail.com', hash, Date.now());
+  db.prepare('INSERT INTO admins (id, email, password, role, mustChangePassword, createdAt) VALUES (?, ?, ?, ?, ?, ?)').run('default-admin', 'youroger1@gmail.com', hash, 'super_admin', 0, Date.now());
 }
 
 // Seed global settings if not exists
@@ -260,19 +306,62 @@ app.post('/api/auth/login', (req, res) => {
   const user: any = db.prepare('SELECT * FROM admins WHERE email = ?').get(email);
   
   if (user && bcrypt.compareSync(password, user.password)) {
-    const token = jwt.sign({ email: user.email }, finalJwtSecret, { expiresIn: '24h' });
-    res.json({ token, email: user.email });
+    const token = jwt.sign({ 
+      email: user.email, 
+      role: user.role,
+      mustChangePassword: user.mustChangePassword 
+    }, finalJwtSecret, { expiresIn: '24h' });
+    res.json({ 
+      token, 
+      email: user.email, 
+      role: user.role,
+      mustChangePassword: !!user.mustChangePassword 
+    });
   } else {
     res.status(401).json({ error: 'Invalid credentials' });
   }
 });
 
+app.post('/api/auth/change-password', authenticateToken, (req: any, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const user: any = db.prepare('SELECT * FROM admins WHERE email = ?').get(req.user.email);
+
+  if (user && bcrypt.compareSync(currentPassword, user.password)) {
+    const hash = bcrypt.hashSync(newPassword, 10);
+    db.prepare('UPDATE admins SET password = ?, mustChangePassword = 0 WHERE email = ?').run(hash, req.user.email);
+    res.json({ success: true });
+  } else {
+    res.status(400).json({ error: 'Invalid current password' });
+  }
+});
+
+app.post('/api/auth/reset-password', authenticateToken, (req: any, res) => {
+  // Only super admin can reset passwords
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const { userId, newPassword } = req.body;
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE admins SET password = ?, mustChangePassword = 1 WHERE id = ?').run(hash, userId);
+  res.json({ success: true });
+});
+
 app.get('/api/auth/me', authenticateToken, (req: any, res) => {
-  res.json({ email: req.user.email });
+  const user: any = db.prepare('SELECT email, role, mustChangePassword FROM admins WHERE email = ?').get(req.user.email);
+  if (user) {
+    res.json({ 
+      email: user.email, 
+      role: user.role, 
+      mustChangePassword: !!user.mustChangePassword 
+    });
+  } else {
+    res.status(404).json({ error: 'User not found' });
+  }
 });
 
 app.post('/api/upload', authenticateToken, (req, res) => {
-  upload.single('file')(req, res, (err) => {
+  upload.single('file')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ error: 'File size exceeds the 5MB limit' });
@@ -285,19 +374,71 @@ app.post('/api/upload', authenticateToken, (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
+
+    const filePath = req.file.path;
+    const fileExt = path.extname(req.file.originalname).toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp'].includes(fileExt);
+
+    if (isImage) {
+      try {
+        const optimizedFilename = `opt-${req.file.filename.split('.')[0]}.webp`;
+        const optimizedPath = path.join(uploadsDir, optimizedFilename);
+        
+        await sharp(filePath)
+          .resize(1920, 1080, { fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toFile(optimizedPath);
+        
+        // Remove original file
+        fs.unlinkSync(filePath);
+        
+        return res.json({ url: `/uploads/${optimizedFilename}` });
+      } catch (error) {
+        console.error('Image optimization error:', error);
+        // Fallback to original if optimization fails
+      }
+    }
+    
     const fileUrl = `/uploads/${req.file.filename}`;
     res.json({ url: fileUrl });
   });
 });
 
+app.post('/api/gallery/bulk', authenticateToken, (req, res) => {
+  const { images, title, category, date } = req.body;
+  if (!images || !Array.isArray(images)) {
+    return res.status(400).json({ error: 'Images array is required' });
+  }
+
+  try {
+    const stmt = db.prepare(`
+      INSERT INTO gallery (id, title, image_url, category, date, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction((items) => {
+      for (const imageUrl of items) {
+        const id = (Date.now() + Math.random()).toString();
+        stmt.run(id, title, imageUrl, category, date, new Date().toISOString());
+      }
+    });
+
+    transaction(images);
+    res.json({ success: true, count: images.length });
+  } catch (e: any) {
+    console.error('Bulk gallery upload error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Generic CRUD routes
-const tables = ['news', 'hero_slides', 'partners', 'provinces', 'resources', 'thematic_areas', 'admins', 'settings', 'staff', 'leadership', 'gallery'];
+const tables = ['news', 'hero_slides', 'partners', 'provinces', 'resources', 'thematic_areas', 'admins', 'settings', 'staff', 'leadership', 'gallery', 'programs'];
 
 tables.forEach(table => {
   // GET all
   app.get(`/api/${table}`, (req, res) => {
     let orderBy = 'createdAt DESC';
-    if (table === 'hero_slides' || table === 'thematic_areas' || table === 'staff' || table === 'leadership') orderBy = 'orderIndex ASC';
+    if (table === 'hero_slides' || table === 'thematic_areas' || table === 'staff' || table === 'leadership' || table === 'programs') orderBy = 'orderIndex ASC';
     if (table === 'provinces') orderBy = 'name ASC';
     
     try {
@@ -357,7 +498,7 @@ tables.forEach(table => {
   });
 
   // POST
-  app.post(`/api/${table}`, authenticateToken, (req, res) => {
+  app.post(`/api/${table}`, authenticateToken, async (req, res) => {
     const id = Date.now().toString();
     const data = { ...req.body, id };
     
@@ -371,8 +512,17 @@ tables.forEach(table => {
         data.created_at = new Date().toISOString();
       }
 
-      if (table === 'admins' && data.password) {
+      let plainPassword = '';
+      if (table === 'admins') {
+        if (!data.password) {
+          // Generate a random password if not provided
+          plainPassword = Math.random().toString(36).slice(-8);
+          data.password = plainPassword;
+        } else {
+          plainPassword = data.password;
+        }
         data.password = bcrypt.hashSync(data.password, 10);
+        data.mustChangePassword = 1; // Require password change on first login
       }
 
       if (data.coordinates && typeof data.coordinates !== 'string') data.coordinates = JSON.stringify(data.coordinates);
@@ -384,7 +534,12 @@ tables.forEach(table => {
       const placeholders = validKeys.map(() => '?').join(',');
       
       db.prepare(`INSERT INTO ${table} (${validKeys.map(k => `"${k}"`).join(',')}) VALUES (${placeholders})`).run(validValues);
-      res.json({ id, ...req.body });
+      
+      const responseData = { id, ...req.body };
+      if (table === 'admins' && plainPassword) {
+        responseData.password = plainPassword;
+      }
+      res.json(responseData);
     } catch (e: any) {
       console.error(`Error inserting into ${table}:`, e);
       res.status(500).json({ error: e.message });

@@ -14,7 +14,9 @@ import ThematicAreasManager from './ThematicAreasManager';
 import StaffManager from './StaffManager';
 import LeadershipManager from './LeadershipManager';
 import GalleryManager from './GalleryManager';
+import ProgramsManager from './ProgramsManager';
 import ConfirmModal from './ConfirmModal';
+import ChangePassword from './ChangePassword';
 
 export default function AdminDashboard() {
   const { user, isAdmin, login, logout } = useAuth();
@@ -79,6 +81,14 @@ export default function AdminDashboard() {
     );
   }
 
+  if (user.mustChangePassword) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <ChangePassword />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
       {/* Mobile Header */}
@@ -126,9 +136,13 @@ export default function AdminDashboard() {
             <ImageIcon className="w-5 h-5 mr-3" />
             Manage Carousel
           </Link>
+          <Link to="/admin/programs" className="flex items-center px-4 py-3 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">
+            <Briefcase className="w-5 h-5 mr-3" />
+            Manage Programs
+          </Link>
           <Link to="/admin/resources" className="flex items-center px-4 py-3 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">
             <FileDown className="w-5 h-5 mr-3" />
-            Publications & Docs
+            Partners Assets
           </Link>
           <Link to="/admin/partners" className="flex items-center px-4 py-3 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors">
             <Briefcase className="w-5 h-5 mr-3" />
@@ -192,6 +206,7 @@ export default function AdminDashboard() {
             <Route path="/news/new" element={<NewsEditor />} />
             <Route path="/news/edit/:id" element={<NewsEditor />} />
             <Route path="/carousel" element={<CarouselManager />} />
+            <Route path="/programs" element={<ProgramsManager />} />
             <Route path="/resources" element={<ResourcesManager />} />
             <Route path="/partners" element={<PartnersManager />} />
             <Route path="/provinces" element={<ProvincesManager />} />
@@ -204,6 +219,7 @@ export default function AdminDashboard() {
         </div>
       </main>
     </div>
+
   );
 }
 

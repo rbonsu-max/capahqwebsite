@@ -6,6 +6,9 @@ import { api } from '../lib/api';
 export default function AboutUs() {
   const [staff, setStaff] = useState<any[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [selectedProgram, setSelectedProgram] = useState<any | null>(null);
+  const [loadingPrograms, setLoadingPrograms] = useState(true);
 
   useEffect(() => {
     const fetchStaff = async () => {
@@ -16,21 +19,21 @@ export default function AboutUs() {
         console.error('Error fetching staff:', error);
       }
     };
-    fetchStaff();
-  }, []);
 
-  const programs = [
-    "Gender desk",
-    "Green Anglicans Movement Africa",
-    "Disaster Preparedness, Response and Relief",
-    "Theological Education",
-    "Church and Community Mobilization Program",
-    "Agents of Change",
-    "Safe Migration and Human Trafficking",
-    "Village Saving and Loans Associations (VSLA) Wegrow Africa",
-    "Communities Richer in Diversity (CRID)",
-    "Bishop's Orientation"
-  ];
+    const fetchPrograms = async () => {
+      try {
+        const data = await api.get('/programs');
+        setPrograms(data);
+      } catch (error) {
+        console.error('Error fetching programs:', error);
+      } finally {
+        setLoadingPrograms(false);
+      }
+    };
+
+    fetchStaff();
+    fetchPrograms();
+  }, []);
 
   return (
     <div className="pt-20 bg-slate-50 min-h-screen">
@@ -64,27 +67,99 @@ export default function AboutUs() {
               CAPA runs several programs aimed at empowering communities and addressing key challenges across the continent.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {programs.map((program, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: index * 0.05 }}
-                className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                    <div className="w-3 h-3 bg-blue-600 rounded-full" />
+          
+          {loadingPrograms ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {programs.map((program, index) => (
+                <motion.div
+                  key={program.id || index}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.05 }}
+                  className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer hover:border-blue-300 group"
+                  onClick={() => setSelectedProgram(program)}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-600 transition-colors">
+                      <div className="w-3 h-3 bg-blue-600 rounded-full group-hover:bg-white transition-colors" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-slate-900 leading-tight group-hover:text-blue-700 transition-colors">{program.title}</h3>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 leading-tight">{program}</h3>
-                </div>
-              </motion.div>
-            ))}
-          </div>
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
+
+      {/* Program Modal */}
+      <AnimatePresence>
+        {selectedProgram && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => setSelectedProgram(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <button
+                onClick={() => setSelectedProgram(null)}
+                className="absolute top-4 right-4 p-2 bg-white/80 hover:bg-white text-slate-900 rounded-full z-10 backdrop-blur-sm transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              
+              <div className="p-8 overflow-y-auto">
+                <h2 className="text-3xl font-bold text-slate-900 mb-4">{selectedProgram.title}</h2>
+                
+                {selectedProgram.description && (
+                  <p className="text-lg text-slate-600 mb-6 font-medium italic border-l-4 border-blue-500 pl-4">
+                    {selectedProgram.description}
+                  </p>
+                )}
+                
+                <div className="prose prose-slate max-w-none mb-8">
+                  {selectedProgram.content ? (
+                    <div className="whitespace-pre-wrap text-slate-600 leading-relaxed">
+                      {selectedProgram.content}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 italic">No detailed information available.</p>
+                  )}
+                </div>
+
+                {selectedProgram.link && (
+                  <div className="mt-auto pt-6 border-t border-slate-100">
+                    <a 
+                      href={selectedProgram.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+                    >
+                      Visit Program Website
+                      <svg className="ml-2 w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Staff Directory */}
       <section className="py-20 bg-white border-t border-slate-200">

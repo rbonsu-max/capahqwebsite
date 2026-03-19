@@ -34,7 +34,7 @@ export default function Partners() {
   if (partners.length === 0) return null;
 
   return (
-    <section className="py-24 bg-white border-t border-slate-200 overflow-hidden">
+    <section id="partners" className="py-24 bg-white border-t border-slate-200 overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto mb-16">
           <h2 className="text-sm font-bold text-blue-600 tracking-widest uppercase mb-2">Our Network</h2>
@@ -77,6 +77,7 @@ export default function Partners() {
                         src={partner.logoUrl} 
                         alt={`${partner.name} logo`} 
                         className="w-full h-full object-contain mix-blend-multiply"
+                        loading="lazy"
                         onError={(e) => {
                           e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(partner.name)}&background=f8fafc&color=2563eb&size=128&font-size=0.33`;
                           e.currentTarget.classList.remove('mix-blend-multiply');

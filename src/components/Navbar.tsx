@@ -49,13 +49,13 @@ export default function Navbar() {
     { name: 'Our Work', href: '/#work' },
     { name: 'Members', href: '/#members' },
     { 
-      name: 'Resources', 
-      href: '/#resources',
+      name: 'Partners', 
+      href: '/#partners',
       dropdown: [
         { name: 'External Partners', url: '/external-partners', isInternal: true }
       ]
     },
-    { name: 'Communications', href: '/#news' },
+    { name: 'News', href: '/#news' },
     { name: 'Gallery', href: '/gallery' },
   ];
 
@@ -167,11 +167,11 @@ export default function Navbar() {
               </div>
             ))}
             <a
-              href="/#donate"
-              onClick={(e) => handleNavClick(e, '/#donate')}
+              href="/#support"
+              onClick={(e) => handleNavClick(e, '/#support')}
               className="inline-flex items-center justify-center px-5 py-2.5 border border-transparent text-sm font-medium rounded-full text-white bg-blue-700 hover:bg-blue-800 transition-colors shadow-sm whitespace-nowrap"
             >
-              Donate
+              Support Our Work
             </a>
           </div>
 
@@ -258,11 +258,11 @@ export default function Navbar() {
               ))}
               <div className="pt-4 px-2">
                 <a
-                  href="/#donate"
+                  href="/#support"
                   className="flex items-center justify-center w-full px-5 py-3.5 border border-transparent text-base font-bold rounded-xl text-white bg-blue-700 hover:bg-blue-800 shadow-md shadow-blue-200 transition-all active:scale-[0.98]"
-                  onClick={(e) => handleNavClick(e, '/#donate')}
+                  onClick={(e) => handleNavClick(e, '/#support')}
                 >
-                  Donate to CAPA
+                  Support Our Work
                 </a>
               </div>
             </div>

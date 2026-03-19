@@ -67,5 +67,17 @@ export const api = {
       body: formData
     });
     return handleResponse(res);
+  },
+  postBulkGallery: async (data: { images: string[], title: string, category: string, date: string }) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`${API_URL}/gallery/bulk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    return handleResponse(res);
   }
 };
